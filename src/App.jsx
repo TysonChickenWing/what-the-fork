@@ -159,6 +159,12 @@ export default function App() {
     setShowJoin(false);
   }
 
+  function logout() {
+    try { localStorage.removeItem("wtf_user"); } catch {}
+    setCurrentUser(null);
+    setShowJoin(true);
+  }
+
   async function addRecipe() {
     if (!newRecipe.title.trim() || !currentUser) return;
     await supabase.from("recipes").insert({
@@ -231,6 +237,7 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Avatar name={currentUser} size={30} />
             <span style={{ fontSize: 13, fontFamily: "sans-serif", color: "#C8C4B8" }}>{currentUser}</span>
+            <button onClick={logout} title="Sign out" style={{ background: "none", border: "none", color: "#555", fontSize: 16, cursor: "pointer", padding: "0 2px", lineHeight: 1 }}>⏏</button>
           </div>
         </div>
       </header>
@@ -270,6 +277,44 @@ export default function App() {
 
 function JoinScreen({ onJoin }) {
   const [name, setName] = useState("");
+  const [pin, setPin] = useState("");
+  const [step, setStep] = useState("name"); // "name" | "pin-new" | "pin-return"
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleNameNext() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setLoading(true);
+    setError("");
+    const { data } = await supabase.from("users").select("name").eq("name", trimmed).maybeSingle();
+    setLoading(false);
+    setStep(data ? "pin-return" : "pin-new");
+  }
+
+  async function handlePinSubmit() {
+    const trimmed = name.trim();
+    if (pin.length !== 4) { setError("PIN must be 4 digits."); return; }
+    setLoading(true);
+    setError("");
+
+    if (step === "pin-new") {
+      await supabase.from("users").insert({ name: trimmed, pin });
+      onJoin(trimmed);
+    } else {
+      const { data } = await supabase.from("users").select("pin").eq("name", trimmed).maybeSingle();
+      if (data?.pin === pin) {
+        onJoin(trimmed);
+      } else {
+        setError("Wrong PIN. Try again.");
+        setPin("");
+      }
+    }
+    setLoading(false);
+  }
+
+  const inputStyle = { width: "100%", background: "#1A1A14", border: "1px solid #444", borderRadius: 8, padding: "10px 14px", fontSize: 15, color: "#F5F0E8", fontFamily: "sans-serif", outline: "none", boxSizing: "border-box", marginBottom: 14 };
+
   return (
     <div style={{ minHeight: "100vh", background: "#1A1A14", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 32 }}>
       <div style={{ textAlign: "center" }}>
@@ -277,22 +322,52 @@ function JoinScreen({ onJoin }) {
         <div style={{ fontSize: 16, color: "#888", fontFamily: "sans-serif" }}>A shared cookbook for friends</div>
       </div>
       <div style={{ background: "#242420", borderRadius: 16, padding: "32px", width: 340, border: "1px solid #333" }}>
-        <p style={{ color: "#C8C4B8", fontFamily: "sans-serif", fontSize: 14, marginTop: 0, marginBottom: 20, lineHeight: 1.6 }}>
-          Enter your name to join. Anyone with this link can add recipes, comment, and save favorites.
-        </p>
-        <input
-          style={{ width: "100%", background: "#1A1A14", border: "1px solid #444", borderRadius: 8, padding: "10px 14px", fontSize: 15, color: "#F5F0E8", fontFamily: "sans-serif", outline: "none", boxSizing: "border-box", marginBottom: 14 }}
-          placeholder="Your name"
-          value={name} onChange={e => setName(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && onJoin(name)}
-          autoFocus
-        />
-        <button
-          onClick={() => onJoin(name)}
-          style={{ width: "100%", background: "#C84B2F", border: "none", borderRadius: 8, padding: "11px", fontSize: 15, color: "#fff", fontFamily: "sans-serif", fontWeight: 500, cursor: "pointer" }}
-        >
-          Join the table
-        </button>
+
+        {step === "name" && (
+          <>
+            <p style={{ color: "#C8C4B8", fontFamily: "sans-serif", fontSize: 14, marginTop: 0, marginBottom: 20, lineHeight: 1.6 }}>
+              Enter your name to join. You'll set a 4-digit PIN so you can sign in as yourself from any device.
+            </p>
+            <input style={inputStyle} placeholder="Your name" value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleNameNext()}
+              autoFocus />
+            <button onClick={handleNameNext} disabled={loading || !name.trim()}
+              style={{ width: "100%", background: "#C84B2F", border: "none", borderRadius: 8, padding: "11px", fontSize: 15, color: "#fff", fontFamily: "sans-serif", fontWeight: 500, cursor: "pointer", opacity: loading ? 0.7 : 1 }}>
+              {loading ? "Checking…" : "Continue →"}
+            </button>
+          </>
+        )}
+
+        {(step === "pin-new" || step === "pin-return") && (
+          <>
+            {step === "pin-new" && (
+              <p style={{ color: "#C8C4B8", fontFamily: "sans-serif", fontSize: 14, marginTop: 0, marginBottom: 8, lineHeight: 1.6 }}>
+                Welcome, <strong style={{ color: "#F5F0E8" }}>{name}</strong>! Choose a 4-digit PIN — you'll use this to sign in from any device.
+              </p>
+            )}
+            {step === "pin-return" && (
+              <p style={{ color: "#C8C4B8", fontFamily: "sans-serif", fontSize: 14, marginTop: 0, marginBottom: 8, lineHeight: 1.6 }}>
+                Welcome back, <strong style={{ color: "#F5F0E8" }}>{name}</strong>! Enter your PIN to continue.
+              </p>
+            )}
+            <input style={{ ...inputStyle, letterSpacing: "0.3em", textAlign: "center", fontSize: 22 }}
+              placeholder="••••" maxLength={4} value={pin} type="password" inputMode="numeric"
+              onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setError(""); }}
+              onKeyDown={e => e.key === "Enter" && handlePinSubmit()}
+              autoFocus />
+            {error && <div style={{ color: "#E87070", fontFamily: "sans-serif", fontSize: 13, marginBottom: 12, marginTop: -8 }}>{error}</div>}
+            <button onClick={handlePinSubmit} disabled={loading || pin.length !== 4}
+              style={{ width: "100%", background: "#C84B2F", border: "none", borderRadius: 8, padding: "11px", fontSize: 15, color: "#fff", fontFamily: "sans-serif", fontWeight: 500, cursor: "pointer", opacity: (loading || pin.length !== 4) ? 0.7 : 1 }}>
+              {loading ? "Checking…" : step === "pin-new" ? "Set PIN & join" : "Sign in"}
+            </button>
+            <button onClick={() => { setStep("name"); setPin(""); setError(""); }}
+              style={{ width: "100%", background: "transparent", border: "none", color: "#666", fontFamily: "sans-serif", fontSize: 13, marginTop: 10, cursor: "pointer" }}>
+              ← Use a different name
+            </button>
+          </>
+        )}
+
       </div>
     </div>
   );
