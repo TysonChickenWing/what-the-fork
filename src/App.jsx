@@ -572,7 +572,6 @@ function RecipeCard({ recipe, currentUser, onOpen, onLike }) {
       <div style={S.cardBody}>
         <div style={S.cardCategory(recipe.category)}>{recipe.category}</div>
         <h3 style={S.cardTitle}>{recipe.title}</h3>
-        {avg !== null && <div style={{ marginBottom: 6 }}><StarDisplay value={avg} size={13} /></div>}
         <p style={S.cardDesc}>{recipe.description}</p>
         <div style={S.cardFooter}>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -580,6 +579,11 @@ function RecipeCard({ recipe, currentUser, onOpen, onLike }) {
             <span style={{ fontSize: 12, color: T.inkLight, fontWeight: 600 }}>{recipe.author}</span>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {avg !== null && (
+              <span style={{ fontSize: 12, color: "#C9963A", fontWeight: 700, display: "flex", alignItems: "center", gap: 2 }}>
+                ★ {avg.toFixed(1)}
+              </span>
+            )}
             <button onClick={e => { e.stopPropagation(); onLike(recipe.id); }}
               style={{ background: liked ? T.peachLight : "none", border: "none", cursor: "pointer", fontSize: 12, color: liked ? T.peach : T.inkLight, padding: "3px 8px", borderRadius: 20, display: "flex", alignItems: "center", gap: 3, fontFamily: "'Nunito', sans-serif", fontWeight: 700 }}>
               {liked ? "♥" : "♡"} {recipe.likes?.length ?? 0}
