@@ -416,6 +416,9 @@ function JoinScreen({ onJoin }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // If already stored, offer one-tap continue
+  const storedUser = (() => { try { return localStorage.getItem("wtf_user"); } catch { return null; } })();
+
   async function handleNameNext() {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -447,53 +450,77 @@ function JoinScreen({ onJoin }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(145deg, #FDF0E4 0%, #F5E8D8 100%)`, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 28, padding: 20 }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(145deg, #FDF0E4 0%, #F5E8D8 100%)", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 28, padding: 20 }}>
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 52, fontFamily: "'Georgia', serif", color: T.peach, marginBottom: 6 }}>What The Fork</div>
         <div style={{ fontSize: 16, color: T.inkMid, fontFamily: "'Nunito', sans-serif", fontWeight: 500 }}>A shared cookbook for friends & family</div>
       </div>
 
-      <div style={{ background: "#fff", borderRadius: 24, padding: "32px", width: "100%", maxWidth: 360, boxShadow: "0 4px 32px rgba(212,120,90,0.12)", border: `1px solid ${T.border}` }}>
-        {step === "name" && (
-          <>
-            <p style={{ color: T.inkMid, fontSize: 14, fontFamily: "'Nunito', sans-serif", marginTop: 0, marginBottom: 20, lineHeight: 1.7 }}>
-              Enter your name to join. You'll create a 4-digit PIN so you can sign in as yourself from any device.
-            </p>
-            <input style={fieldStyle} placeholder="Your name" value={name}
-              onChange={e => setName(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleNameNext()}
-              autoFocus />
-            <button onClick={handleNameNext} disabled={loading || !name.trim()}
-              style={{ ...S.btn(), width: "100%", padding: "12px", fontSize: 15, opacity: (loading || !name.trim()) ? 0.6 : 1 }}>
-              {loading ? "Checking…" : "Continue →"}
-            </button>
-          </>
-        )}
+      {/* One-tap continue for returning users */}
+      {storedUser && step === "name" && (
+        <div style={{ background: "#fff", borderRadius: 20, padding: "20px 24px", width: "100%", maxWidth: 360, boxShadow: "0 4px 24px rgba(212,120,90,0.1)", border: `2px solid ${T.peach}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <Avatar name={storedUser} size={40} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: T.ink }}>{storedUser}</div>
+              <div style={{ fontSize: 12, color: T.inkLight }}>Signed in on this device</div>
+            </div>
+          </div>
+          <button onClick={() => onJoin(storedUser)}
+            style={{ ...S.btn(), width: "100%", padding: "11px", fontSize: 15 }}>
+            Continue as {storedUser}
+          </button>
+          <button onClick={() => { try { localStorage.removeItem("wtf_user"); } catch {} window.location.reload(); }}
+            style={{ width: "100%", background: "transparent", border: "none", color: T.inkLight, fontFamily: "'Nunito', sans-serif", fontSize: 13, marginTop: 8, cursor: "pointer" }}>
+            Sign in as someone else
+          </button>
+        </div>
+      )}
 
-        {(step === "pin-new" || step === "pin-return") && (
-          <>
-            <p style={{ color: T.inkMid, fontSize: 14, fontFamily: "'Nunito', sans-serif", marginTop: 0, marginBottom: 16, lineHeight: 1.7 }}>
-              {step === "pin-new"
-                ? <>Welcome, <strong style={{ color: T.ink }}>{name}</strong>! Pick a 4-digit PIN — you'll use it to sign in from any device.</>
-                : <>Welcome back, <strong style={{ color: T.ink }}>{name}</strong>! Enter your PIN to continue.</>}
-            </p>
-            <input style={{ ...fieldStyle, letterSpacing: "0.4em", textAlign: "center", fontSize: 24, fontWeight: 700 }}
-              placeholder="••••" maxLength={4} value={pin} type="password" inputMode="numeric"
-              onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setError(""); }}
-              onKeyDown={e => e.key === "Enter" && handlePinSubmit()}
-              autoFocus />
-            {error && <div style={{ color: "#C0554A", fontSize: 13, marginBottom: 10, marginTop: -6, fontFamily: "'Nunito', sans-serif" }}>{error}</div>}
-            <button onClick={handlePinSubmit} disabled={loading || pin.length !== 4}
-              style={{ ...S.btn(), width: "100%", padding: "12px", fontSize: 15, opacity: (loading || pin.length !== 4) ? 0.6 : 1 }}>
-              {loading ? "Checking…" : step === "pin-new" ? "Set PIN & join 🍴" : "Sign in"}
-            </button>
-            <button onClick={() => { setStep("name"); setPin(""); setError(""); }}
-              style={{ width: "100%", background: "transparent", border: "none", color: T.inkLight, fontFamily: "'Nunito', sans-serif", fontSize: 13, marginTop: 10, cursor: "pointer", fontWeight: 500 }}>
-              ← Use a different name
-            </button>
-          </>
-        )}
-      </div>
+      {/* New sign-in form */}
+      {(!storedUser || step !== "name") && (
+        <div style={{ background: "#fff", borderRadius: 24, padding: "32px", width: "100%", maxWidth: 360, boxShadow: "0 4px 32px rgba(212,120,90,0.12)", border: `1px solid ${T.border}` }}>
+          {step === "name" && (
+            <>
+              <p style={{ color: T.inkMid, fontSize: 14, fontFamily: "'Nunito', sans-serif", marginTop: 0, marginBottom: 20, lineHeight: 1.7 }}>
+                Enter your name to join. You'll create a 4-digit PIN so you can sign in from any device.
+              </p>
+              <input style={fieldStyle} placeholder="Your name" value={name}
+                onChange={e => setName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleNameNext()}
+                autoFocus />
+              <button onClick={handleNameNext} disabled={loading || !name.trim()}
+                style={{ ...S.btn(), width: "100%", padding: "12px", fontSize: 15, opacity: (loading || !name.trim()) ? 0.6 : 1 }}>
+                {loading ? "Checking…" : "Continue →"}
+              </button>
+            </>
+          )}
+
+          {(step === "pin-new" || step === "pin-return") && (
+            <>
+              <p style={{ color: T.inkMid, fontSize: 14, fontFamily: "'Nunito', sans-serif", marginTop: 0, marginBottom: 16, lineHeight: 1.7 }}>
+                {step === "pin-new"
+                  ? <><strong style={{ color: T.ink }}>{name}</strong> — pick a 4-digit PIN you'll use from any device.</>
+                  : <>Welcome back, <strong style={{ color: T.ink }}>{name}</strong>! Enter your PIN.</>}
+              </p>
+              <input style={{ ...fieldStyle, letterSpacing: "0.4em", textAlign: "center", fontSize: 24, fontWeight: 700 }}
+                placeholder="••••" maxLength={4} value={pin} type="password" inputMode="numeric"
+                onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setError(""); }}
+                onKeyDown={e => e.key === "Enter" && handlePinSubmit()}
+                autoFocus />
+              {error && <div style={{ color: "#C0554A", fontSize: 13, marginBottom: 10, marginTop: -6, fontFamily: "'Nunito', sans-serif" }}>{error}</div>}
+              <button onClick={handlePinSubmit} disabled={loading || pin.length !== 4}
+                style={{ ...S.btn(), width: "100%", padding: "12px", fontSize: 15, opacity: (loading || pin.length !== 4) ? 0.6 : 1 }}>
+                {loading ? "Checking…" : step === "pin-new" ? "Set PIN & join 🍴" : "Sign in"}
+              </button>
+              <button onClick={() => { setStep("name"); setPin(""); setError(""); }}
+                style={{ width: "100%", background: "transparent", border: "none", color: T.inkLight, fontFamily: "'Nunito', sans-serif", fontSize: 13, marginTop: 10, cursor: "pointer", fontWeight: 500 }}>
+                ← Use a different name
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -789,6 +816,35 @@ function RecipeModal({ recipe, currentUser, onClose, onLike, onComment, newComme
 
 function AddRecipeModal({ recipe, setRecipe, onClose, onSave, isEditing = false }) {
   const set = (k, v) => setRecipe(prev => ({ ...prev, [k]: v }));
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+
+  async function handleImport() {
+    if (!importUrl.trim()) return;
+    setImporting(true); setImportError("");
+    try {
+      const res = await fetch(`/api/parse-recipe?url=${encodeURIComponent(importUrl.trim())}`);
+      const data = await res.json();
+      if (!res.ok) { setImportError(data.error || "Could not import that recipe."); return; }
+      setRecipe(prev => ({
+        ...prev,
+        title: data.title || prev.title,
+        description: data.description || prev.description,
+        ingredients: data.ingredients || prev.ingredients,
+        steps: data.steps || prev.steps,
+        prepTime: data.prepTime || prev.prepTime,
+        cookTime: data.cookTime || prev.cookTime,
+        category: data.category || prev.category,
+      }));
+      setImportUrl("");
+    } catch {
+      setImportError("Network error — couldn't reach that page.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <div style={S.modal} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={S.modalBox}>
@@ -798,6 +854,28 @@ function AddRecipeModal({ recipe, setRecipe, onClose, onSave, isEditing = false 
             <button onClick={onClose} style={{ background: T.parchment, border: "none", borderRadius: "50%", width: 30, height: 30, fontSize: 18, cursor: "pointer", color: T.inkMid, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
           </div>
         </div>
+
+        {/* URL importer — only on new recipes */}
+        {!isEditing && (
+          <div style={{ margin: "0 24px", padding: "14px 16px", background: T.parchment, borderRadius: 14, marginTop: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.inkMid, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Import from a website</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                style={{ ...S.input, flex: 1, fontSize: 13 }}
+                placeholder="Paste a recipe URL (AllRecipes, NYT Cooking, etc.)"
+                value={importUrl}
+                onChange={e => { setImportUrl(e.target.value); setImportError(""); }}
+                onKeyDown={e => e.key === "Enter" && handleImport()}
+              />
+              <button onClick={handleImport} disabled={importing || !importUrl.trim()}
+                style={{ ...S.btn("sm"), borderRadius: 24, whiteSpace: "nowrap", opacity: (importing || !importUrl.trim()) ? 0.6 : 1 }}>
+                {importing ? "…" : "Import"}
+              </button>
+            </div>
+            {importError && <div style={{ fontSize: 12, color: "#C0554A", marginTop: 6, fontWeight: 500 }}>{importError}</div>}
+            {!importError && <div style={{ fontSize: 11, color: T.inkLight, marginTop: 6 }}>Fields will be pre-filled — you can edit anything before saving.</div>}
+          </div>
+        )}
         <div style={S.modalBody}>
           {[
             { label: "Recipe name *", key: "title", placeholder: "e.g. Cast Iron Fried Chicken", type: "input" },
