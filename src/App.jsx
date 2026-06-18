@@ -170,6 +170,7 @@ export default function App() {
   const [filterAuthor, setFilterAuthor] = useState("All");
   const [searchQ, setSearchQ] = useState("");
   const [showAddRecipe, setShowAddRecipe] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState(null);
   const [showJoin, setShowJoin] = useState(() => {
     try { return !localStorage.getItem("wtf_user"); } catch { return true; }
   });
@@ -229,6 +230,19 @@ export default function App() {
     });
     setNewRecipe({ title: "", category: "Mains", description: "", ingredients: "", steps: "", prepTime: "", cookTime: "" });
     setShowAddRecipe(false);
+  }
+
+  async function saveEditedRecipe(id, fields) {
+    await supabase.from("recipes").update({
+      title: fields.title.trim(),
+      category: fields.category,
+      description: fields.description,
+      ingredients: fields.ingredients,
+      steps: fields.steps,
+      prep_time: fields.prepTime,
+      cook_time: fields.cookTime,
+    }).eq("id", id);
+    setEditingRecipe(null);
   }
 
   async function toggleLike(recipeId) {
@@ -357,12 +371,37 @@ export default function App() {
           onComment={() => addComment(selectedRecipe.id)}
           newComment={newComment} setNewComment={setNewComment}
           liked={selectedRecipe.likes?.some(l => l.user_name === currentUser)}
+          onEdit={() => {
+            setEditingRecipe({
+              id: selectedRecipe.id,
+              fields: {
+                title: selectedRecipe.title,
+                category: selectedRecipe.category,
+                description: selectedRecipe.description || "",
+                ingredients: selectedRecipe.ingredients || "",
+                steps: selectedRecipe.steps || "",
+                prepTime: selectedRecipe.prep_time || "",
+                cookTime: selectedRecipe.cook_time || "",
+              }
+            });
+            setSelectedRecipe(null);
+          }}
         />
       )}
 
       {showAddRecipe && (
         <AddRecipeModal recipe={newRecipe} setRecipe={setNewRecipe}
           onClose={() => setShowAddRecipe(false)} onSave={addRecipe} />
+      )}
+
+      {editingRecipe && (
+        <AddRecipeModal
+          recipe={editingRecipe.fields}
+          setRecipe={updater => setEditingRecipe(prev => ({ ...prev, fields: typeof updater === "function" ? updater(prev.fields) : updater }))}
+          onClose={() => setEditingRecipe(null)}
+          onSave={() => saveEditedRecipe(editingRecipe.id, editingRecipe.fields)}
+          isEditing
+        />
       )}
     </div>
   );
@@ -662,9 +701,10 @@ function FavoritesView({ recipes, currentUser, onOpenRecipe, onToggleLike, isMob
 
 // ── Recipe Modal ─────────────────────────────────────────────────────────────
 
-function RecipeModal({ recipe, currentUser, onClose, onLike, onComment, newComment, setNewComment, liked }) {
+function RecipeModal({ recipe, currentUser, onClose, onLike, onComment, newComment, setNewComment, liked, onEdit }) {
   const commentRef = useRef(null);
   const catColor = getCategoryColor(recipe.category);
+  const isAuthor = recipe.author === currentUser;
   return (
     <div style={S.modal} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={S.modalBox}>
@@ -679,7 +719,14 @@ function RecipeModal({ recipe, currentUser, onClose, onLike, onComment, newComme
                 <span style={{ fontSize: 13, color: T.inkMid, fontWeight: 500 }}>{recipe.author} · {timeAgo(recipe.created_at)}</span>
               </div>
             </div>
-            <button onClick={onClose} style={{ background: T.parchment, border: "none", borderRadius: "50%", width: 30, height: 30, fontSize: 18, cursor: "pointer", color: T.inkMid, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>×</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+              {isAuthor && (
+                <button onClick={onEdit} style={{ background: T.parchment, border: "none", borderRadius: 20, padding: "5px 14px", fontSize: 13, cursor: "pointer", color: T.inkMid, fontFamily: "'Nunito', sans-serif", fontWeight: 600 }}>
+                  ✏️ Edit
+                </button>
+              )}
+              <button onClick={onClose} style={{ background: T.parchment, border: "none", borderRadius: "50%", width: 30, height: 30, fontSize: 18, cursor: "pointer", color: T.inkMid, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+            </div>
           </div>
         </div>
         <div style={S.modalBody}>
@@ -740,14 +787,14 @@ function RecipeModal({ recipe, currentUser, onClose, onLike, onComment, newComme
 
 // ── Add Recipe Modal ─────────────────────────────────────────────────────────
 
-function AddRecipeModal({ recipe, setRecipe, onClose, onSave }) {
+function AddRecipeModal({ recipe, setRecipe, onClose, onSave, isEditing = false }) {
   const set = (k, v) => setRecipe(prev => ({ ...prev, [k]: v }));
   return (
     <div style={S.modal} onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={S.modalBox}>
         <div style={S.modalHeader}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ fontFamily: "'Georgia', serif", fontSize: 20, fontWeight: 400, margin: 0, color: T.ink }}>Add a recipe</h2>
+            <h2 style={{ fontFamily: "'Georgia', serif", fontSize: 20, fontWeight: 400, margin: 0, color: T.ink }}>{isEditing ? "Edit recipe" : "Add a recipe"}</h2>
             <button onClick={onClose} style={{ background: T.parchment, border: "none", borderRadius: "50%", width: 30, height: 30, fontSize: 18, cursor: "pointer", color: T.inkMid, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
           </div>
         </div>
@@ -787,7 +834,7 @@ function AddRecipeModal({ recipe, setRecipe, onClose, onSave }) {
           </div>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
             <button style={S.btn("outline")} onClick={onClose}>Cancel</button>
-            <button style={{ ...S.btn(), opacity: !recipe.title.trim() ? 0.5 : 1 }} onClick={onSave} disabled={!recipe.title.trim()}>Save recipe</button>
+            <button style={{ ...S.btn(), opacity: !recipe.title.trim() ? 0.5 : 1 }} onClick={onSave} disabled={!recipe.title.trim()}>{isEditing ? "Save changes" : "Save recipe"}</button>
           </div>
         </div>
       </div>
