@@ -180,11 +180,20 @@ export default function App() {
   });
 
   async function fetchRecipes() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("recipes")
       .select("*, likes(user_name), comments(id, author, text, created_at), ratings(user_name, stars)")
       .order("created_at", { ascending: false });
-    if (data) setRecipes(data);
+    if (data) {
+      setRecipes(data);
+    } else if (error) {
+      // ratings table not yet created — fall back without it
+      const { data: fallback } = await supabase
+        .from("recipes")
+        .select("*, likes(user_name), comments(id, author, text, created_at)")
+        .order("created_at", { ascending: false });
+      if (fallback) setRecipes(fallback.map(r => ({ ...r, ratings: [] })));
+    }
     setLoading(false);
   }
 
