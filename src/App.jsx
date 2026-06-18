@@ -819,6 +819,68 @@ function AddRecipeModal({ recipe, setRecipe, onClose, onSave, isEditing = false 
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
+  const [scanPreview, setScanPreview] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const cameraInputRef = useRef(null);
+
+  function handlePhotoSelected(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setScanError("");
+    setScanPreview(null);
+
+    // Resize to max 1200px on longest side before sending
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 1200;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+        else { width = Math.round(width * MAX / height); height = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      URL.revokeObjectURL(objectUrl);
+      setScanPreview(dataUrl);
+    };
+    img.src = objectUrl;
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  }
+
+  async function handleScan() {
+    if (!scanPreview) return;
+    setScanning(true); setScanError("");
+    try {
+      const base64 = scanPreview.split(",")[1];
+      const res = await fetch("/api/scan-recipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageData: base64, mediaType: "image/jpeg" }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setScanError(data.error || "Couldn't read the recipe."); return; }
+      setRecipe(prev => ({
+        ...prev,
+        title: data.title || prev.title,
+        description: data.description || prev.description,
+        ingredients: data.ingredients || prev.ingredients,
+        steps: data.steps || prev.steps,
+        prepTime: data.prepTime || prev.prepTime,
+        cookTime: data.cookTime || prev.cookTime,
+        category: data.category || prev.category,
+      }));
+      setScanPreview(null);
+    } catch {
+      setScanError("Network error — please try again.");
+    } finally {
+      setScanning(false);
+    }
+  }
 
   async function handleImport() {
     if (!importUrl.trim()) return;
@@ -876,6 +938,61 @@ function AddRecipeModal({ recipe, setRecipe, onClose, onSave, isEditing = false 
             {!importError && <div style={{ fontSize: 11, color: T.inkLight, marginTop: 6 }}>Fields will be pre-filled — you can edit anything before saving.</div>}
           </div>
         )}
+
+        {/* Camera scanner — only on new recipes */}
+        {!isEditing && (
+          <div style={{ margin: "12px 24px 0", padding: "14px 16px", background: T.sageLight, borderRadius: 14, border: `1px solid ${T.sage}22` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: T.sage, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
+              📷 Scan a handwritten recipe
+            </div>
+
+            {/* Hidden file input — capture="environment" opens rear camera on mobile */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: "none" }}
+              onChange={handlePhotoSelected}
+            />
+
+            {!scanPreview ? (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => cameraInputRef.current?.click()}
+                  style={{ ...S.btn("outline"), borderColor: T.sage, color: T.sage, borderRadius: 24, fontSize: 13, padding: "7px 16px" }}>
+                  📷 Take a photo
+                </button>
+                <button
+                  onClick={() => { if (cameraInputRef.current) { cameraInputRef.current.removeAttribute("capture"); cameraInputRef.current.click(); cameraInputRef.current.setAttribute("capture", "environment"); } }}
+                  style={{ ...S.btn("outline"), borderColor: T.sage, color: T.sage, borderRadius: 24, fontSize: 13, padding: "7px 16px" }}>
+                  🖼 Upload image
+                </button>
+              </div>
+            ) : (
+              <div>
+                <div style={{ position: "relative", marginBottom: 10 }}>
+                  <img src={scanPreview} alt="Recipe photo" style={{ width: "100%", maxHeight: 200, objectFit: "contain", borderRadius: 10, background: "#fff", border: `1px solid ${T.border}` }} />
+                  <button onClick={() => setScanPreview(null)} style={{ position: "absolute", top: 6, right: 6, background: "rgba(255,255,255,0.9)", border: "none", borderRadius: "50%", width: 26, height: 26, cursor: "pointer", fontSize: 14, color: T.inkMid, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                </div>
+                <button
+                  onClick={handleScan}
+                  disabled={scanning}
+                  style={{ ...S.btn(), background: T.sage, borderRadius: 24, fontSize: 13, padding: "8px 20px", opacity: scanning ? 0.7 : 1, width: "100%" }}>
+                  {scanning ? "Reading your recipe…" : "✨ Extract recipe from photo"}
+                </button>
+              </div>
+            )}
+
+            {scanError && <div style={{ fontSize: 12, color: "#C0554A", marginTop: 8, fontWeight: 500 }}>{scanError}</div>}
+            {!scanPreview && !scanError && (
+              <div style={{ fontSize: 11, color: T.sage, marginTop: 8 }}>
+                Works with index cards, notebooks, and printed recipes.
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={S.modalBody}>
           {[
             { label: "Recipe name *", key: "title", placeholder: "e.g. Cast Iron Fried Chicken", type: "input" },
