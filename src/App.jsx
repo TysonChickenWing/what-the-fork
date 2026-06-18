@@ -182,7 +182,7 @@ export default function App() {
   async function fetchRecipes() {
     const { data } = await supabase
       .from("recipes")
-      .select("*, likes(user_name), comments(id, author, text, created_at)")
+      .select("*, likes(user_name), comments(id, author, text, created_at), ratings(user_name, stars)")
       .order("created_at", { ascending: false });
     if (data) setRecipes(data);
     setLoading(false);
@@ -195,6 +195,7 @@ export default function App() {
       .on("postgres_changes", { event: "*", schema: "public", table: "recipes" }, fetchRecipes)
       .on("postgres_changes", { event: "*", schema: "public", table: "likes" }, fetchRecipes)
       .on("postgres_changes", { event: "*", schema: "public", table: "comments" }, fetchRecipes)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ratings" }, fetchRecipes)
       .subscribe();
     return () => supabase.removeChannel(channel);
   }, []);
@@ -254,6 +255,11 @@ export default function App() {
     } else {
       await supabase.from("likes").insert({ recipe_id: recipeId, user_name: currentUser });
     }
+  }
+
+  async function rateRecipe(recipeId, stars) {
+    if (!currentUser) return;
+    await supabase.from("ratings").upsert({ recipe_id: recipeId, user_name: currentUser, stars }, { onConflict: "recipe_id,user_name" });
   }
 
   async function addComment(recipeId) {
@@ -369,6 +375,7 @@ export default function App() {
           onClose={() => setSelectedRecipe(null)}
           onLike={() => toggleLike(selectedRecipe.id)}
           onComment={() => addComment(selectedRecipe.id)}
+          onRate={(stars) => rateRecipe(selectedRecipe.id, stars)}
           newComment={newComment} setNewComment={setNewComment}
           liked={selectedRecipe.likes?.some(l => l.user_name === currentUser)}
           onEdit={() => {
@@ -527,15 +534,36 @@ function JoinScreen({ onJoin }) {
 
 // ── Recipe Card ──────────────────────────────────────────────────────────────
 
+function avgRating(ratings) {
+  if (!ratings?.length) return null;
+  return ratings.reduce((sum, r) => sum + r.stars, 0) / ratings.length;
+}
+
+function StarDisplay({ value, size = 14 }) {
+  if (value === null) return null;
+  return (
+    <span style={{ fontSize: size, letterSpacing: 1, lineHeight: 1 }}>
+      {[1,2,3,4,5].map(i => (
+        <span key={i} style={{ color: i <= Math.round(value) ? "#F5C842" : "#DDD" }}>★</span>
+      ))}
+      <span style={{ fontSize: size - 2, color: T.inkLight, marginLeft: 3, fontFamily: "'Nunito', sans-serif", fontWeight: 600 }}>
+        {value.toFixed(1)}
+      </span>
+    </span>
+  );
+}
+
 function RecipeCard({ recipe, currentUser, onOpen, onLike }) {
   const liked = recipe.likes?.some(l => l.user_name === currentUser);
   const catColor = getCategoryColor(recipe.category);
+  const avg = avgRating(recipe.ratings);
   return (
     <div style={S.card} onClick={() => onOpen(recipe)}>
       <div style={{ height: 7, background: catColor }} />
       <div style={S.cardBody}>
         <div style={S.cardCategory(recipe.category)}>{recipe.category}</div>
         <h3 style={S.cardTitle}>{recipe.title}</h3>
+        {avg !== null && <div style={{ marginBottom: 6 }}><StarDisplay value={avg} size={13} /></div>}
         <p style={S.cardDesc}>{recipe.description}</p>
         <div style={S.cardFooter}>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -728,7 +756,56 @@ function FavoritesView({ recipes, currentUser, onOpenRecipe, onToggleLike, isMob
 
 // ── Recipe Modal ─────────────────────────────────────────────────────────────
 
-function RecipeModal({ recipe, currentUser, onClose, onLike, onComment, newComment, setNewComment, liked, onEdit }) {
+function StarRating({ recipe, currentUser, onRate }) {
+  const [hovered, setHovered] = useState(0);
+  const myRating = recipe.ratings?.find(r => r.user_name === currentUser)?.stars ?? 0;
+  const avg = avgRating(recipe.ratings);
+  const count = recipe.ratings?.length ?? 0;
+  const isAuthor = recipe.author === currentUser;
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.inkMid, marginBottom: 6 }}>
+        {isAuthor ? "Rating" : "Rate this recipe"}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 4 }}>
+          {[1,2,3,4,5].map(star => (
+            <button
+              key={star}
+              disabled={isAuthor}
+              onClick={() => !isAuthor && onRate(star)}
+              onMouseEnter={() => !isAuthor && setHovered(star)}
+              onMouseLeave={() => setHovered(0)}
+              style={{
+                background: "none", border: "none", cursor: isAuthor ? "default" : "pointer",
+                fontSize: 28, padding: "0 2px", lineHeight: 1, transition: "transform 0.1s",
+                transform: (hovered || myRating) >= star ? "scale(1.15)" : "scale(1)",
+                color: (hovered >= star || (!hovered && myRating >= star)) ? "#F5C842" : "#DDD",
+              }}
+            >★</button>
+          ))}
+        </div>
+        <div style={{ fontFamily: "'Nunito', sans-serif" }}>
+          {myRating > 0 && !isAuthor && (
+            <span style={{ fontSize: 13, color: T.inkMid, fontWeight: 600 }}>
+              Your rating: {myRating}★
+            </span>
+          )}
+          {count > 0 && (
+            <span style={{ fontSize: 13, color: T.inkLight, marginLeft: myRating > 0 && !isAuthor ? 10 : 0 }}>
+              {avg.toFixed(1)} avg · {count} {count === 1 ? "rating" : "ratings"}
+            </span>
+          )}
+          {count === 0 && <span style={{ fontSize: 13, color: T.inkLight }}>No ratings yet</span>}
+        </div>
+      </div>
+      {isAuthor && <div style={{ fontSize: 12, color: T.inkLight, marginTop: 4 }}>You can't rate your own recipe</div>}
+    </div>
+  );
+}
+
+function RecipeModal({ recipe, currentUser, onClose, onLike, onComment, newComment, setNewComment, liked, onEdit, onRate }) {
   const commentRef = useRef(null);
   const catColor = getCategoryColor(recipe.category);
   const isAuthor = recipe.author === currentUser;
@@ -772,6 +849,7 @@ function RecipeModal({ recipe, currentUser, onClose, onLike, onComment, newComme
           <h4 style={{ fontFamily: "'Georgia', serif", fontSize: 16, fontWeight: 400, margin: "0 0 10px", color: T.ink }}>Steps</h4>
           <p style={{ fontSize: 14, lineHeight: 1.85, color: T.inkMid, margin: "0 0 22px", whiteSpace: "pre-line" }}>{recipe.steps}</p>
           <hr style={S.divider} />
+          <StarRating recipe={recipe} currentUser={currentUser} onRate={onRate} />
           <div style={{ marginBottom: 22 }}>
             <button onClick={onLike} style={{
               background: liked ? T.peachLight : T.card,
